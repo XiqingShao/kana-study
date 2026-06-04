@@ -181,8 +181,8 @@ function PracticeReady({ wrongCount, onRetryMistakes, onStart }) {
     <div className="practice-ready">
       <div className="practice-copy">
         <span>今日做题</span>
-        <strong>选一组题，开始练</strong>
-        <p>先把答案反馈、错题重练和结果页跑顺，不需要账号也能在线刷题。</p>
+        <strong>随机 50 题，做完再回炉</strong>
+        <p>每轮覆盖全表，混合平假名、片假名和罗马音。结果只看全会或未完成，不需要账号。</p>
       </div>
       <div className="mode-grid">
         {practiceModes.map((mode) => (
@@ -196,7 +196,7 @@ function PracticeReady({ wrongCount, onRetryMistakes, onStart }) {
         >
           <span>刚才错过的</span>
           <strong>错题重练</strong>
-          <small>{wrongCount > 0 ? `${wrongCount} 个假名需要再看一眼` : "做完一组并答错后会出现"}</small>
+          <small>{wrongCount > 0 ? `${wrongCount} 个题型需要再看一眼` : "做完一组并答错后会出现"}</small>
           <b>
             重练
             <RotateCcw size={17} aria-hidden="true" />
@@ -281,18 +281,18 @@ function PracticeQuestion({ answer, modeTitle, question, questionIndex, total, o
 function PracticeResult({ summary, onRestart, onRetryMistakes }) {
   return (
     <div className="practice-result">
-      <div className="result-score">
-        <span>本轮结果</span>
-        <strong>{summary.correctCount}</strong>
-        <small>/ {summary.total} 题</small>
+      <div className={`result-score ${summary.isMastered ? "is-mastered" : "is-unfinished"}`}>
+        <span>本轮状态</span>
+        <strong>{summary.statusLabel}</strong>
+        <small>{summary.isMastered ? "这一轮全部答对" : `答对 ${summary.correctCount} / ${summary.total} 题`}</small>
       </div>
       <div className="result-stats">
         <div>
-          <span>正确率</span>
-          <strong>{summary.accuracy}%</strong>
+          <span>答对</span>
+          <strong>{summary.correctCount}</strong>
         </div>
         <div>
-          <span>错题</span>
+          <span>回炉题</span>
           <strong>{summary.wrongCount}</strong>
         </div>
       </div>
@@ -303,10 +303,11 @@ function PracticeResult({ summary, onRestart, onRetryMistakes }) {
               <strong>{item.kana.hiragana}</strong>
               <span>{item.kana.katakana}</span>
               <small>{item.kana.romaji}</small>
+              <em>{item.questionTypeLabel}</em>
             </div>
           ))
         ) : (
-          <p>这一组没有错题，可以直接再来一组。</p>
+          <p>这一组没有错题，状态就是全会。</p>
         )}
       </div>
       <div className="result-actions">
@@ -386,7 +387,7 @@ export function App() {
     ? practiceSession.questions[practiceSession.currentIndex]
     : null;
   const headerCorrect = practiceSession?.answers.filter((answer) => answer.isCorrect).length ?? practiceSummary?.correctCount ?? 0;
-  const headerTotal = practiceSession?.questions.length ?? practiceSummary?.total ?? 10;
+  const headerTotal = practiceSession?.questions.length ?? practiceSummary?.total ?? 50;
 
   function handleSelectKana(kana) {
     setSelectedKana(kana);
@@ -509,7 +510,7 @@ export function App() {
           summary={practiceSummary}
           onAnswer={handlePracticeAnswer}
           onNext={handleNextPracticeQuestion}
-          onRestart={() => handleStartPractice(practiceSession?.mode.id === "mistakes" ? "starter" : practiceSession?.mode.id ?? "starter")}
+          onRestart={() => handleStartPractice(practiceSession?.mode.id === "mistakes" ? "random50" : practiceSession?.mode.id ?? "random50")}
           onRetryMistakes={handleRetryMistakes}
           onStart={handleStartPractice}
         />

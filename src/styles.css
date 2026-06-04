@@ -884,13 +884,22 @@ h1 {
 
 .result-score strong {
   color: #ed6e55;
-  font-size: 58px;
+  font-size: 44px;
   line-height: 0.95;
+}
+
+.result-score.is-mastered strong {
+  color: #2d6f3a;
+}
+
+.result-score.is-unfinished strong {
+  color: #d45f4d;
 }
 
 .result-score small {
   color: #59625a;
-  font-size: 20px;
+  font-size: 18px;
+  line-height: 1.35;
   font-weight: 800;
 }
 
@@ -945,6 +954,15 @@ h1 {
 .wrong-item small {
   color: #826554;
   font-weight: 800;
+}
+
+.wrong-item em {
+  margin-top: 3px;
+  color: #6b7469;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .result-actions {
