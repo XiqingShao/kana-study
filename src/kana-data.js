@@ -105,7 +105,7 @@ const rowData = [
 
 function makeKana([romaji, hiragana, katakana, pronunciation, memory], rowLabel, columnLabel) {
   return {
-    id: romaji,
+    id: hiragana === "を" ? "wo" : romaji,
     romaji,
     hiragana,
     katakana,

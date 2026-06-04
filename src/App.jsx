@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
+  ArrowRight,
   BookOpen,
   CheckCircle2,
   ClipboardList,
@@ -12,13 +13,17 @@ import {
 } from "lucide-react";
 
 import {
-  allKana,
-  buildQuizChoices,
   getKanaById,
   gojuonColumns,
   gojuonRows,
-  gradeQuizAnswer,
 } from "./kana-data.js";
+import {
+  createMistakePracticeSession,
+  createPracticeSession,
+  gradePracticeAnswer,
+  practiceModes,
+  summarizePracticeSession,
+} from "./practice-engine.js";
 import pronunciationDiagram from "./assets/pronunciation-ka-diagram.jpg";
 
 const studyTabs = [
@@ -26,13 +31,8 @@ const studyTabs = [
   { id: "katakana", label: "片假名", icon: Layers },
   { id: "hint", label: "发音提示", icon: Lightbulb },
   { id: "cards", label: "卡片练习", icon: ClipboardList },
-  { id: "quiz", label: "小测验", icon: PencilLine },
+  { id: "quiz", label: "练习中心", icon: PencilLine },
 ];
-
-function getNextQuestion(current, round) {
-  const currentIndex = allKana.findIndex((kana) => kana.id === current.id);
-  return allKana[(currentIndex + 5 + round * 3) % allKana.length];
-}
 
 function speakKana(kana) {
   if (!("speechSynthesis" in window)) {
@@ -162,71 +162,213 @@ function StudyCard({ kana, flipped, onFlip, onSpeak }) {
   );
 }
 
-function QuizPanel({
-  question,
-  choices,
-  selectedAnswer,
-  feedback,
-  score,
-  round,
-  onAnswer,
-  onNext,
-}) {
+function ModeCard({ mode, onStart }) {
   return (
-    <section className="quiz-panel" aria-labelledby="quiz-title">
-      <div className="quiz-title-wrap">
-        <div className="panel-label tape tape-blue" id="quiz-title">
-          小测验
+    <button className="mode-card" type="button" onClick={() => onStart(mode.id)}>
+      <span>{mode.eyebrow}</span>
+      <strong>{mode.title}</strong>
+      <small>{mode.description}</small>
+      <b>
+        开始
+        <ArrowRight size={17} aria-hidden="true" />
+      </b>
+    </button>
+  );
+}
+
+function PracticeReady({ wrongCount, onRetryMistakes, onStart }) {
+  return (
+    <div className="practice-ready">
+      <div className="practice-copy">
+        <span>今日做题</span>
+        <strong>选一组题，开始练</strong>
+        <p>先把答案反馈、错题重练和结果页跑顺，不需要账号也能在线刷题。</p>
+      </div>
+      <div className="mode-grid">
+        {practiceModes.map((mode) => (
+          <ModeCard key={mode.id} mode={mode} onStart={onStart} />
+        ))}
+        <button
+          className={`mode-card mistake-card ${wrongCount === 0 ? "is-disabled" : ""}`}
+          type="button"
+          disabled={wrongCount === 0}
+          onClick={onRetryMistakes}
+        >
+          <span>刚才错过的</span>
+          <strong>错题重练</strong>
+          <small>{wrongCount > 0 ? `${wrongCount} 个假名需要再看一眼` : "做完一组并答错后会出现"}</small>
+          <b>
+            重练
+            <RotateCcw size={17} aria-hidden="true" />
+          </b>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PracticeQuestion({ answer, modeTitle, question, questionIndex, total, onAnswer, onNext }) {
+  const progress = Math.round(((questionIndex + 1) / total) * 100);
+
+  return (
+    <div className="practice-active">
+      <div className="practice-progress">
+        <em>{modeTitle}</em>
+        <span>{question.typeLabel}</span>
+        <strong>
+          第 {questionIndex + 1} / {total} 题
+        </strong>
+        <div className="progress-track" aria-hidden="true">
+          <i style={{ width: `${progress}%` }} />
         </div>
       </div>
-      <div className="quiz-content">
-        <div className="quiz-prompt">
-          <span>选择正确的读音（平假名）</span>
-          <strong>{question.hiragana}</strong>
-          <small>{question.katakana}</small>
+
+      <div className="practice-question-card">
+        <div className="question-stem">
+          <span>{question.instruction}</span>
+          <strong>{question.prompt}</strong>
+          <small>{question.promptSub}</small>
         </div>
-        <div className="choice-row" role="group" aria-label={`${question.hiragana} 的读音选项`}>
-          {choices.map((choice, index) => {
-            const isSelected = choice.value === selectedAnswer;
-            const showCorrect = selectedAnswer && choice.value === question.romaji;
-            const showWrong = isSelected && choice.value !== question.romaji;
+
+        <div className="choice-row" role="group" aria-label={`${question.prompt} 的选项`}>
+          {question.choices.map((choice, index) => {
+            const isSelected = choice.value === answer?.selectedValue;
+            const showCorrect = answer && choice.value === question.correctValue;
+            const showWrong = answer && isSelected && choice.value !== question.correctValue;
             return (
               <button
                 className={`choice-button ${isSelected ? "is-selected" : ""} ${showCorrect ? "is-correct" : ""} ${showWrong ? "is-wrong" : ""}`}
                 type="button"
                 key={choice.value}
+                disabled={Boolean(answer)}
                 onClick={() => onAnswer(choice.value)}
               >
                 <span>{String.fromCharCode(65 + index)}</span>
-                {choice.label}
+                <b>{choice.label}</b>
+                <small>{choice.subLabel}</small>
               </button>
             );
           })}
         </div>
-        <div className="quiz-feedback" aria-live="polite">
-          {feedback ? (
-            feedback.correct ? (
+
+        <div className={`quiz-feedback ${answer ? "has-answer" : ""}`} aria-live="polite">
+          {answer ? (
+            answer.isCorrect ? (
               <CheckCircle2 size={18} aria-hidden="true" />
             ) : (
               <XCircle size={18} aria-hidden="true" />
             )
           ) : null}
-          <span>{feedback?.message ?? `本轮第 ${round + 1} 题`}</span>
+          <span>{answer?.message ?? "先选一个答案，答完会显示解析。"}</span>
         </div>
-        <button className="next-button" type="button" onClick={onNext}>
-          下一题
+
+        {answer && !answer.isCorrect ? (
+          <div className="answer-note">
+            <strong>记忆提示</strong>
+            <p>{question.kana.memory}</p>
+            <small>{question.kana.pronunciation}</small>
+          </div>
+        ) : null}
+      </div>
+
+      <button className="next-button" type="button" disabled={!answer} onClick={onNext}>
+        {questionIndex + 1 === total ? "查看结果" : "下一题"}
+      </button>
+    </div>
+  );
+}
+
+function PracticeResult({ summary, onRestart, onRetryMistakes }) {
+  return (
+    <div className="practice-result">
+      <div className="result-score">
+        <span>本轮结果</span>
+        <strong>{summary.correctCount}</strong>
+        <small>/ {summary.total} 题</small>
+      </div>
+      <div className="result-stats">
+        <div>
+          <span>正确率</span>
+          <strong>{summary.accuracy}%</strong>
+        </div>
+        <div>
+          <span>错题</span>
+          <strong>{summary.wrongCount}</strong>
+        </div>
+      </div>
+      <div className="wrong-list">
+        {summary.wrongAnswers.length > 0 ? (
+          summary.wrongAnswers.map((item) => (
+            <div className="wrong-item" key={item.questionId}>
+              <strong>{item.kana.hiragana}</strong>
+              <span>{item.kana.katakana}</span>
+              <small>{item.kana.romaji}</small>
+            </div>
+          ))
+        ) : (
+          <p>这一组没有错题，可以直接再来一组。</p>
+        )}
+      </div>
+      <div className="result-actions">
+        <button className="next-button secondary" type="button" onClick={onRestart}>
+          再来一组
+        </button>
+        <button
+          className="next-button"
+          type="button"
+          disabled={summary.wrongAnswers.length === 0}
+          onClick={onRetryMistakes}
+        >
+          重练错题
         </button>
       </div>
-      <div className="quiz-dots" aria-label="本轮进度">
-        {[0, 1, 2, 3, 4].map((dot) => (
-          <span className={dot <= (round % 5) ? "is-on" : ""} key={dot} />
-        ))}
+    </div>
+  );
+}
+
+function PracticePanel({
+  answer,
+  lastWrongAnswers,
+  question,
+  questionIndex,
+  session,
+  summary,
+  onAnswer,
+  onNext,
+  onRestart,
+  onRetryMistakes,
+  onStart,
+}) {
+  return (
+    <section className="quiz-panel" aria-labelledby="quiz-title">
+      <div className="quiz-title-wrap">
+        <div className="panel-label tape tape-blue" id="quiz-title">
+          练习中心
+        </div>
       </div>
-      <div className="daily-note">每天一点点，进步看得见！</div>
-      <div className="score-chip">
-        <span>得分</span>
-        <strong>{score}</strong>
-      </div>
+      {!session ? (
+        <PracticeReady
+          wrongCount={lastWrongAnswers.length}
+          onRetryMistakes={onRetryMistakes}
+          onStart={onStart}
+        />
+      ) : session.status === "result" ? (
+        <PracticeResult
+          summary={summary}
+          onRestart={onRestart}
+          onRetryMistakes={onRetryMistakes}
+        />
+      ) : (
+        <PracticeQuestion
+          answer={answer}
+          modeTitle={session.mode.title}
+          question={question}
+          questionIndex={questionIndex}
+          total={session.questions.length}
+          onAnswer={onAnswer}
+          onNext={onNext}
+        />
+      )}
     </section>
   );
 }
@@ -235,13 +377,16 @@ export function App() {
   const [activeTab, setActiveTab] = useState("hiragana");
   const [selectedKana, setSelectedKana] = useState(() => getKanaById("ka"));
   const [flipped, setFlipped] = useState(false);
-  const [quizQuestion, setQuizQuestion] = useState(() => getKanaById("sa"));
-  const [selectedAnswer, setSelectedAnswer] = useState("");
-  const [feedback, setFeedback] = useState(null);
-  const [score, setScore] = useState(0);
-  const [round, setRound] = useState(0);
+  const [practiceSession, setPracticeSession] = useState(null);
+  const [practiceAnswer, setPracticeAnswer] = useState(null);
+  const [practiceSummary, setPracticeSummary] = useState(null);
+  const [lastWrongAnswers, setLastWrongAnswers] = useState([]);
 
-  const choices = useMemo(() => buildQuizChoices(quizQuestion), [quizQuestion]);
+  const currentQuestion = practiceSession?.status === "active"
+    ? practiceSession.questions[practiceSession.currentIndex]
+    : null;
+  const headerCorrect = practiceSession?.answers.filter((answer) => answer.isCorrect).length ?? practiceSummary?.correctCount ?? 0;
+  const headerTotal = practiceSession?.questions.length ?? practiceSummary?.total ?? 10;
 
   function handleSelectKana(kana) {
     setSelectedKana(kana);
@@ -249,26 +394,71 @@ export function App() {
     setActiveTab("hiragana");
   }
 
-  function handleAnswer(answer) {
-    if (selectedAnswer) {
+  function handleStartPractice(modeId) {
+    const nextSession = createPracticeSession(modeId);
+    setPracticeSession(nextSession);
+    setPracticeAnswer(null);
+    setPracticeSummary(null);
+    setSelectedKana(nextSession.questions[0].kana);
+    setActiveTab("quiz");
+  }
+
+  function handleRetryMistakes() {
+    if (lastWrongAnswers.length === 0) {
       return;
     }
 
-    const result = gradeQuizAnswer(quizQuestion, answer);
-    setSelectedAnswer(answer);
-    setFeedback(result);
-    if (result.correct) {
-      setScore((current) => current + 1);
+    const nextSession = createMistakePracticeSession(lastWrongAnswers);
+    if (nextSession.questions.length === 0) {
+      return;
     }
+
+    setPracticeSession(nextSession);
+    setPracticeAnswer(null);
+    setPracticeSummary(null);
+    setSelectedKana(nextSession.questions[0].kana);
+    setActiveTab("quiz");
   }
 
-  function handleNextQuestion() {
-    const nextRound = round + 1;
-    const nextQuestion = getNextQuestion(quizQuestion, nextRound);
-    setRound(nextRound);
-    setQuizQuestion(nextQuestion);
-    setSelectedAnswer("");
-    setFeedback(null);
+  function handlePracticeAnswer(selectedValue) {
+    if (!currentQuestion || practiceAnswer) {
+      return;
+    }
+
+    const answer = gradePracticeAnswer(currentQuestion, selectedValue);
+    setPracticeAnswer(answer);
+    setPracticeSession((session) => ({
+      ...session,
+      answers: [...session.answers, answer],
+    }));
+    setSelectedKana(currentQuestion.kana);
+  }
+
+  function handleNextPracticeQuestion() {
+    if (!practiceSession || !practiceAnswer) {
+      return;
+    }
+
+    const nextIndex = practiceSession.currentIndex + 1;
+    if (nextIndex >= practiceSession.questions.length) {
+      const summary = summarizePracticeSession(practiceSession, practiceSession.answers);
+      setPracticeSummary(summary);
+      setLastWrongAnswers(summary.wrongAnswers);
+      setPracticeSession({
+        ...practiceSession,
+        status: "result",
+      });
+      setPracticeAnswer(null);
+      return;
+    }
+
+    const nextQuestion = practiceSession.questions[nextIndex];
+    setPracticeSession({
+      ...practiceSession,
+      currentIndex: nextIndex,
+    });
+    setPracticeAnswer(null);
+    setSelectedKana(nextQuestion.kana);
   }
 
   return (
@@ -303,12 +493,26 @@ export function App() {
               />
             ))}
           </nav>
-          <div className="header-score" aria-label={`当前得分 ${score} 分`}>
-            <span>得分</span>
-            <strong>{score + 86}</strong>
-            <small>/100</small>
+          <div className="header-score" aria-label={`本轮答对 ${headerCorrect} 题，共 ${headerTotal} 题`}>
+            <span>本轮</span>
+            <strong>{headerCorrect}</strong>
+            <small>/ {headerTotal}</small>
           </div>
         </header>
+
+        <PracticePanel
+          answer={practiceAnswer}
+          lastWrongAnswers={lastWrongAnswers}
+          question={currentQuestion}
+          questionIndex={practiceSession?.currentIndex ?? 0}
+          session={practiceSession}
+          summary={practiceSummary}
+          onAnswer={handlePracticeAnswer}
+          onNext={handleNextPracticeQuestion}
+          onRestart={() => handleStartPractice(practiceSession?.mode.id === "mistakes" ? "starter" : practiceSession?.mode.id ?? "starter")}
+          onRetryMistakes={handleRetryMistakes}
+          onStart={handleStartPractice}
+        />
 
         <section className="workspace">
           <KanaTable selectedKana={selectedKana} onSelectKana={handleSelectKana} />
@@ -325,17 +529,6 @@ export function App() {
             }}
           />
         </section>
-
-        <QuizPanel
-          choices={choices}
-          feedback={feedback}
-          question={quizQuestion}
-          round={round}
-          score={score}
-          selectedAnswer={selectedAnswer}
-          onAnswer={handleAnswer}
-          onNext={handleNextQuestion}
-        />
       </div>
     </main>
   );

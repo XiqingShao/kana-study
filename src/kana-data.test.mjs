@@ -10,9 +10,11 @@ import {
 
 test("gojuon rows expose the base hiragana chart for study", () => {
   const visibleKana = gojuonRows.flatMap((row) => row.cells.filter(Boolean));
+  const ids = visibleKana.map((kana) => kana.id);
 
   assert.equal(gojuonRows.length, 10);
   assert.ok(visibleKana.length >= 46);
+  assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual(
     gojuonRows.find((row) => row.label === "か行").cells.slice(0, 5).map((cell) => cell.romaji),
     ["ka", "ki", "ku", "ke", "ko"],
