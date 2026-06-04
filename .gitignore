@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.npm-cache/
+*.log
+.npmrc
+AGENTS.md
+design-qa.md
+docs/concepts/
+docs/qa/
+qa-*.png
+playwright-report/
+test-results/
