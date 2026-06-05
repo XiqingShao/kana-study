@@ -11,6 +11,27 @@ const allQuestionTypes = [
 
 const romajiPromptTypes = new Set(["romaji-to-kana", "romaji-to-katakana"]);
 
+export const practiceScopes = [
+  {
+    id: "all",
+    label: "全部混合",
+    description: "平假名、片假名、罗马音和互换题都出现",
+    questionTypes: allQuestionTypes,
+  },
+  {
+    id: "hiragana",
+    label: "只练平假名",
+    description: "只考平假名认读和罗马音找平假名",
+    questionTypes: ["kana-to-romaji", "romaji-to-kana"],
+  },
+  {
+    id: "katakana",
+    label: "只练片假名",
+    description: "只考片假名认读和罗马音找片假名",
+    questionTypes: ["katakana-to-romaji", "romaji-to-katakana"],
+  },
+];
+
 export const practiceModes = [
   {
     id: "random50",
@@ -34,6 +55,10 @@ function getPracticeMode(modeId) {
     throw new Error(`Unknown practice mode: ${modeId}`);
   }
   return mode;
+}
+
+function getPracticeScope(scopeId) {
+  return practiceScopes.find((item) => item.id === scopeId) ?? practiceScopes[0];
 }
 
 function hashSeed(seed) {
@@ -88,7 +113,7 @@ function hasUniqueRomaji(kana) {
 
 function normalizeQuestionType(kana, type) {
   if (romajiPromptTypes.has(type) && !hasUniqueRomaji(kana)) {
-    return type === "romaji-to-katakana" ? "hiragana-to-katakana" : "katakana-to-hiragana";
+    return type === "romaji-to-katakana" ? "katakana-to-romaji" : "kana-to-romaji";
   }
   return type;
 }
@@ -177,6 +202,10 @@ function getQuestionCopy(kana, type) {
   }
 }
 
+function questionTypeLabel(type) {
+  return getQuestionCopy(allKana[0], type).typeLabel;
+}
+
 function buildPracticeChoices(kana, type, questionIndex) {
   const targetIndex = allKana.findIndex((item) => item.id === kana.id);
   const offsets = [0, 7, 13, 23, 31, 39, 43, 5, 17];
@@ -223,11 +252,11 @@ function buildPracticeQuestion(kana, index, requestedType) {
   };
 }
 
-function createQuestionTypeDeck(count, random) {
+function createQuestionTypeDeck(count, random, questionTypes) {
   const typeDeck = [];
 
   while (typeDeck.length < count) {
-    typeDeck.push(...shuffleItems(allQuestionTypes, random));
+    typeDeck.push(...shuffleItems(questionTypes, random));
   }
 
   return typeDeck.slice(0, count);
@@ -237,6 +266,7 @@ function createSession(mode, questionEntries, preferredTypes = allQuestionTypes)
   return {
     status: "active",
     mode,
+    scope: mode.scope ?? practiceScopes[0],
     currentIndex: 0,
     answers: [],
     questions: questionEntries.map((entry, index) => {
@@ -249,12 +279,13 @@ function createSession(mode, questionEntries, preferredTypes = allQuestionTypes)
 
 export function createPracticeSession(modeId, options = {}) {
   const mode = getPracticeMode(modeId);
+  const scope = getPracticeScope(options.scope);
   const seed = options.seed ?? `${mode.id}-${Date.now()}-${Math.random()}`;
   const random = createRandom(seed);
   const kanaList = pickKanaForSession(allKana, mode.questionCount, random);
-  const questionTypes = createQuestionTypeDeck(mode.questionCount, random);
+  const questionTypes = createQuestionTypeDeck(mode.questionCount, random, scope.questionTypes);
 
-  return createSession(mode, kanaList, questionTypes);
+  return createSession({ ...mode, scope }, kanaList, questionTypes);
 }
 
 export function gradePracticeAnswer(question, selectedValue) {
@@ -283,8 +314,27 @@ export function gradePracticeAnswer(question, selectedValue) {
 export function summarizePracticeSession(session, answers) {
   const correctCount = answers.filter((answer) => answer.isCorrect).length;
   const wrongAnswers = answers.filter((answer) => !answer.isCorrect);
+  const wrongTypeGroupMap = new Map();
   const total = session.questions.length;
   const isMastered = total > 0 && answers.length === total && wrongAnswers.length === 0;
+
+  for (const answer of wrongAnswers) {
+    const type = answer.questionType;
+    const existingGroup = wrongTypeGroupMap.get(type);
+
+    if (existingGroup) {
+      existingGroup.count += 1;
+      existingGroup.answers.push(answer);
+      continue;
+    }
+
+    wrongTypeGroupMap.set(type, {
+      type,
+      label: answer.questionTypeLabel ?? questionTypeLabel(type),
+      count: 1,
+      answers: [answer],
+    });
+  }
 
   return {
     total,
@@ -295,6 +345,7 @@ export function summarizePracticeSession(session, answers) {
     isMastered,
     statusLabel: isMastered ? "全会" : "未完成",
     wrongAnswers,
+    wrongTypeGroups: [...wrongTypeGroupMap.values()],
   };
 }
 

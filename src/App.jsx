@@ -22,6 +22,7 @@ import {
   createPracticeSession,
   gradePracticeAnswer,
   practiceModes,
+  practiceScopes,
   summarizePracticeSession,
 } from "./practice-engine.js";
 import pronunciationDiagram from "./assets/pronunciation-ka-diagram.jpg";
@@ -176,7 +177,7 @@ function ModeCard({ mode, onStart }) {
   );
 }
 
-function PracticeReady({ wrongCount, onRetryMistakes, onStart }) {
+function PracticeReady({ activeScope, onRetryMistakes, onScopeChange, onStart, wrongCount }) {
   return (
     <div className="practice-ready">
       <div className="practice-copy">
@@ -184,24 +185,40 @@ function PracticeReady({ wrongCount, onRetryMistakes, onStart }) {
         <strong>随机 50 题，做完再回炉</strong>
         <p>每轮覆盖全表，混合平假名、片假名和罗马音。结果只看全会或未完成，不需要账号。</p>
       </div>
-      <div className="mode-grid">
-        {practiceModes.map((mode) => (
-          <ModeCard key={mode.id} mode={mode} onStart={onStart} />
-        ))}
-        <button
-          className={`mode-card mistake-card ${wrongCount === 0 ? "is-disabled" : ""}`}
-          type="button"
-          disabled={wrongCount === 0}
-          onClick={onRetryMistakes}
-        >
-          <span>刚才错过的</span>
-          <strong>错题重练</strong>
-          <small>{wrongCount > 0 ? `${wrongCount} 个题型需要再看一眼` : "做完一组并答错后会出现"}</small>
-          <b>
-            重练
-            <RotateCcw size={17} aria-hidden="true" />
-          </b>
-        </button>
+      <div className="practice-setup">
+        <div className="scope-selector" role="group" aria-label="题型筛选">
+          {practiceScopes.map((scope) => (
+            <button
+              className={`scope-button ${scope.id === activeScope ? "is-active" : ""}`}
+              type="button"
+              aria-pressed={scope.id === activeScope}
+              key={scope.id}
+              onClick={() => onScopeChange(scope.id)}
+            >
+              <strong>{scope.label}</strong>
+              <span>{scope.description}</span>
+            </button>
+          ))}
+        </div>
+        <div className="mode-grid">
+          {practiceModes.map((mode) => (
+            <ModeCard key={mode.id} mode={mode} onStart={onStart} />
+          ))}
+          <button
+            className={`mode-card mistake-card ${wrongCount === 0 ? "is-disabled" : ""}`}
+            type="button"
+            disabled={wrongCount === 0}
+            onClick={onRetryMistakes}
+          >
+            <span>刚才错过的</span>
+            <strong>错题重练</strong>
+            <small>{wrongCount > 0 ? `${wrongCount} 个未完成题需要再看一眼` : "做完一组并答错后会出现"}</small>
+            <b>
+              重练
+              <RotateCcw size={17} aria-hidden="true" />
+            </b>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -296,6 +313,21 @@ function PracticeResult({ summary, onRestart, onRetryMistakes }) {
           <strong>{summary.wrongCount}</strong>
         </div>
       </div>
+      <div className="result-review">
+        <span>错题复盘</span>
+        {summary.wrongTypeGroups.length > 0 ? (
+          <div className="review-list">
+            {summary.wrongTypeGroups.map((group) => (
+              <div className="review-item" key={group.type}>
+                <strong>{group.label}</strong>
+                <small>{group.count} 题</small>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p>没有薄弱题型。</p>
+        )}
+      </div>
       <div className="wrong-list">
         {summary.wrongAnswers.length > 0 ? (
           summary.wrongAnswers.map((item) => (
@@ -320,7 +352,7 @@ function PracticeResult({ summary, onRestart, onRetryMistakes }) {
           disabled={summary.wrongAnswers.length === 0}
           onClick={onRetryMistakes}
         >
-          重练错题
+          {summary.wrongAnswers.length > 0 ? `重练 ${summary.wrongAnswers.length} 个未完成题` : "重练错题"}
         </button>
       </div>
     </div>
@@ -328,6 +360,7 @@ function PracticeResult({ summary, onRestart, onRetryMistakes }) {
 }
 
 function PracticePanel({
+  activeScope,
   answer,
   lastWrongAnswers,
   question,
@@ -338,6 +371,7 @@ function PracticePanel({
   onNext,
   onRestart,
   onRetryMistakes,
+  onScopeChange,
   onStart,
 }) {
   return (
@@ -351,6 +385,8 @@ function PracticePanel({
         <PracticeReady
           wrongCount={lastWrongAnswers.length}
           onRetryMistakes={onRetryMistakes}
+          activeScope={activeScope}
+          onScopeChange={onScopeChange}
           onStart={onStart}
         />
       ) : session.status === "result" ? (
@@ -382,6 +418,7 @@ export function App() {
   const [practiceAnswer, setPracticeAnswer] = useState(null);
   const [practiceSummary, setPracticeSummary] = useState(null);
   const [lastWrongAnswers, setLastWrongAnswers] = useState([]);
+  const [practiceScope, setPracticeScope] = useState("all");
 
   const currentQuestion = practiceSession?.status === "active"
     ? practiceSession.questions[practiceSession.currentIndex]
@@ -396,7 +433,7 @@ export function App() {
   }
 
   function handleStartPractice(modeId) {
-    const nextSession = createPracticeSession(modeId);
+    const nextSession = createPracticeSession(modeId, { scope: practiceScope });
     setPracticeSession(nextSession);
     setPracticeAnswer(null);
     setPracticeSummary(null);
@@ -504,6 +541,7 @@ export function App() {
         <PracticePanel
           answer={practiceAnswer}
           lastWrongAnswers={lastWrongAnswers}
+          activeScope={practiceScope}
           question={currentQuestion}
           questionIndex={practiceSession?.currentIndex ?? 0}
           session={practiceSession}
@@ -512,6 +550,7 @@ export function App() {
           onNext={handleNextPracticeQuestion}
           onRestart={() => handleStartPractice(practiceSession?.mode.id === "mistakes" ? "random50" : practiceSession?.mode.id ?? "random50")}
           onRetryMistakes={handleRetryMistakes}
+          onScopeChange={setPracticeScope}
           onStart={handleStartPractice}
         />
 

@@ -7,6 +7,7 @@ import {
   createPracticeSession,
   gradePracticeAnswer,
   practiceModes,
+  practiceScopes,
   summarizePracticeSession,
 } from "./practice-engine.js";
 
@@ -17,6 +18,27 @@ test("practice modes define random quiz and mastery entry points", () => {
       ["random50", 50],
       ["mastery", allKana.length],
     ],
+  );
+});
+
+test("practice scopes separate mixed, hiragana, and katakana drills", () => {
+  assert.deepEqual(
+    practiceScopes.map((scope) => scope.id),
+    ["all", "hiragana", "katakana"],
+  );
+
+  const hiraganaSession = createPracticeSession("random50", { seed: "hiragana-only", scope: "hiragana" });
+  const katakanaSession = createPracticeSession("random50", { seed: "katakana-only", scope: "katakana" });
+
+  assert.equal(hiraganaSession.scope.id, "hiragana");
+  assert.equal(katakanaSession.scope.id, "katakana");
+  assert.deepEqual(
+    new Set(hiraganaSession.questions.map((question) => question.type)),
+    new Set(["kana-to-romaji", "romaji-to-kana"]),
+  );
+  assert.deepEqual(
+    new Set(katakanaSession.questions.map((question) => question.type)),
+    new Set(["katakana-to-romaji", "romaji-to-katakana"]),
   );
 });
 
@@ -82,6 +104,28 @@ test("practice grading records answers and summary collects wrong answers", () =
   assert.equal(summary.statusLabel, "未完成");
   assert.equal(summary.wrongAnswers.length, 1);
   assert.equal(summary.wrongAnswers[0].kanaId, wrongQuestion.kana.id);
+});
+
+test("summary groups wrong answers by question type for review", () => {
+  const session = createPracticeSession("random50", { seed: "review-groups" });
+  const wrongQuestions = [
+    session.questions.find((question) => question.type === "kana-to-romaji"),
+    session.questions.find((question) => question.type === "kana-to-romaji" && question.kana.id !== session.questions.find((item) => item.type === "kana-to-romaji").kana.id),
+    session.questions.find((question) => question.type === "katakana-to-romaji"),
+  ];
+  const answers = wrongQuestions.map((question) => {
+    const wrongChoice = question.choices.find((choice) => choice.value !== question.correctValue);
+    return gradePracticeAnswer(question, wrongChoice.value);
+  });
+  const summary = summarizePracticeSession(session, answers);
+
+  assert.deepEqual(
+    summary.wrongTypeGroups.map((group) => [group.type, group.label, group.count]),
+    [
+      ["kana-to-romaji", "平假名认读", 2],
+      ["katakana-to-romaji", "片假名认读", 1],
+    ],
+  );
 });
 
 test("summary marks a fully correct completed session as mastered", () => {
