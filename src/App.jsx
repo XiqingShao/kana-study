@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BookOpen,
@@ -25,6 +25,11 @@ import {
   practiceScopes,
   summarizePracticeSession,
 } from "./practice-engine.js";
+import {
+  correctAnswerAutoAdvanceDelayMs,
+  nextButtonLabel,
+  shouldAutoAdvanceAnswer,
+} from "./practice-flow.js";
 import pronunciationDiagram from "./assets/pronunciation-ka-diagram.jpg";
 
 const studyTabs = [
@@ -226,6 +231,8 @@ function PracticeReady({ activeScope, onRetryMistakes, onScopeChange, onStart, w
 
 function PracticeQuestion({ answer, modeTitle, question, questionIndex, total, onAnswer, onNext }) {
   const progress = Math.round(((questionIndex + 1) / total) * 100);
+  const isLastQuestion = questionIndex + 1 === total;
+  const isAutoAdvancing = shouldAutoAdvanceAnswer(answer);
 
   return (
     <div className="practice-active">
@@ -288,8 +295,8 @@ function PracticeQuestion({ answer, modeTitle, question, questionIndex, total, o
         ) : null}
       </div>
 
-      <button className="next-button" type="button" disabled={!answer} onClick={onNext}>
-        {questionIndex + 1 === total ? "查看结果" : "下一题"}
+      <button className="next-button" type="button" disabled={!answer || isAutoAdvancing} onClick={onNext}>
+        {nextButtonLabel({ answer, isLastQuestion })}
       </button>
     </div>
   );
@@ -498,6 +505,20 @@ export function App() {
     setPracticeAnswer(null);
     setSelectedKana(nextQuestion.kana);
   }
+
+  useEffect(() => {
+    if (!shouldAutoAdvanceAnswer(practiceAnswer) || practiceSession?.status !== "active") {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      handleNextPracticeQuestion();
+    }, correctAnswerAutoAdvanceDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [practiceAnswer, practiceSession?.currentIndex, practiceSession?.status]);
 
   return (
     <main className="notebook-shell">
